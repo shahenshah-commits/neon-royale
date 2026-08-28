@@ -1,752 +1,496 @@
-/**
- * NEON ROYALE — Core Engine & Game Logic
- */
-
-// --- Audio Synthesizer Engine (Zero External Assets Required) ---
-const AudioEngine = {
-    ctx: null,
-    sfxEnabled: true,
-    musicEnabled: true,
-    musicInterval: null,
-
-    init() {
-        if (!this.ctx) {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioContext();
-        }
-        if (this.ctx.state === 'suspended') {
-            this.ctx.resume();
-        }
-    },
-
-    playTone(freq, type, duration, vol = 0.1) {
-        if (!this.sfxEnabled) return;
-        try {
-            this.init();
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-            
-            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
-
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-
-            osc.start();
-            osc.stop(this.ctx.currentTime + duration);
-        } catch(e) {}
-    },
-
-    playClick() { this.playTone(800, 'sine', 0.05, 0.05); },
-    playCoin() { 
-        this.playTone(1200, 'sine', 0.08, 0.1);
-        setTimeout(() => this.playTone(1800, 'sine', 0.12, 0.1), 80);
-    },
-    playCrash() { this.playTone(120, 'sawtooth', 0.5, 0.25); },
-    playLevelUp() {
-        [400, 600, 800, 1200].forEach((f, i) => {
-            setTimeout(() => this.playTone(f, 'triangle', 0.15, 0.15), i * 100);
-        });
-    },
-    playMissionComplete() {
-        [500, 750, 1000].forEach((f, i) => {
-            setTimeout(() => this.playTone(f, 'sine', 0.12, 0.15), i * 120);
-        });
-    },
-
-    toggleSFX() {
-        this.sfxEnabled = !this.sfxEnabled;
-        document.getElementById('sfx-toggle-btn').innerText = this.sfxEnabled ? 'ON' : 'OFF';
-        Storage.saveSettings();
-    },
-
-    toggleMusic() {
-        this.musicEnabled = !this.musicEnabled;
-        document.getElementById('music-toggle-btn').innerText = this.musicEnabled ? 'ON' : 'OFF';
-        if (!this.musicEnabled && this.musicInterval) {
-            clearInterval(this.musicInterval);
-            this.musicInterval = null;
-        } else if (this.musicEnabled) {
-            this.startSynthwaveBeat();
-        }
-        Storage.saveSettings();
-    },
-
-    startSynthwaveBeat() {
-        if (this.musicInterval || !this.musicEnabled) return;
-        const notes = [110, 165, 146.83, 130.81]; // Am synth bass groove
-        let step = 0;
-        this.musicInterval = setInterval(() => {
-            if (!this.musicEnabled) return;
-            try {
-                this.init();
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(notes[step % notes.length], this.ctx.currentTime);
-                
-                gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
-
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.25);
-                step++;
-            } catch(e) {}
-        }, 300);
-    }
-};
-
-// --- Storage Management ---
-const Storage = {
-    data: {
-        coins: 100,
-        unlockedCars: ['ROYALE X'],
-        selectedCar: 'ROYALE X',
-        level: 1,
-        score: 0,
-        highScore: 0,
-        highSpeed: 0,
-        maxDist: 0,
-        playerName: 'DRIVER',
-        missions: {
-            1: { progress: 0, target: 1.0, completed: false, text: 'Drive 1 KM', reward: 150 },
-            2: { progress: 0, target: 180, completed: false, text: 'Reach 180 KM/H', reward: 200 },
-            3: { progress: 0, target: 50, completed: false, text: 'Collect 50 Coins', reward: 300 },
-            4: { progress: 0, target: 1, completed: false, text: 'Drive without crashing', reward: 250 },
-            5: { progress: 0, target: 250, completed: false, text: 'Reach 250 KM/H', reward: 500 },
-            6: { progress: 0, target: 5.0, completed: false, text: 'Long distance drive (5 KM)', reward: 1000 }
-        },
-        settings: { sfx: true, music: true }
-    },
-
-    load() {
-        const saved = localStorage.getItem('neon_royale_save_v1');
-        if (saved) {
-            try {
-                this.data = JSON.parse(saved);
-            } catch(e) {}
-        }
-        AudioEngine.sfxEnabled = this.data.settings.sfx;
-        AudioEngine.musicEnabled = this.data.settings.music;
-        document.getElementById('sfx-toggle-btn').innerText = AudioEngine.sfxEnabled ? 'ON' : 'OFF';
-        document.getElementById('music-toggle-btn').innerText = AudioEngine.musicEnabled ? 'ON' : 'OFF';
-        document.getElementById('player-name-input').value = this.data.playerName;
-        if (AudioEngine.musicEnabled) AudioEngine.startSynthwaveBeat();
-    },
-
-    save() {
-        localStorage.setItem('neon_royale_save_v1', JSON.stringify(this.data));
-        UI.updateHomeStats();
-    },
-
-    savePlayerName(name) {
-        this.data.playerName = name.trim().toUpperCase() || 'DRIVER';
-        this.save();
-    },
-
-    saveSettings() {
-        this.data.settings.sfx = AudioEngine.sfxEnabled;
-        this.data.settings.music = AudioEngine.musicEnabled;
-        this.save();
-    },
-
-    resetData() {
-        if (confirm('Are you sure you want to completely wipe all game progress and stats?')) {
-            localStorage.removeItem('neon_royale_save_v1');
-            location.reload();
-        }
-    }
-};
-
-// --- Car Catalog ---
-const CARS = [
-    { id: 'ROYALE X', name: 'ROYALE X', speed: 65, accel: 60, handling: 70, braking: 70, price: 0, emoji: '🏎️' },
-    { id: 'PHANTOM GT', name: 'PHANTOM GT', speed: 75, accel: 70, handling: 75, braking: 75, price: 500, emoji: '🚘' },
-    { id: 'VORTEX R', name: 'VORTEX R', speed: 85, accel: 85, handling: 80, braking: 80, price: 1500, emoji: '⚡' },
-    { id: 'TITAN RS', name: 'TITAN RS', speed: 92, accel: 90, handling: 85, braking: 85, price: 3500, emoji: '🔥' },
-    { id: 'APEX Z', name: 'APEX Z', speed: 100, accel: 100, handling: 95, braking: 92, price: 7500, emoji: '👑' }
-];
-
-// --- Levels Catalog ---
-const LEVELS = [
-    { level: 1, name: 'ROOKIE', xpReq: 0, reward: 0 },
-    { level: 2, name: 'STREET RACER', xpReq: 1000, reward: 250 },
-    { level: 3, name: 'NIGHT DRIVER', xpReq: 3000, reward: 500 },
-    { level: 4, name: 'SPEED HUNTER', xpReq: 6000, reward: 1000 },
-    { level: 5, name: 'ROYAL RACER', xpReq: 10000, reward: 2000 },
-    { level: 6, name: 'ELITE', xpReq: 15000, reward: 3500 },
-    { level: 7, name: 'VIP', xpReq: 22000, reward: 5000 },
-    { level: 8, name: 'MASTER', xpReq: 30000, reward: 7500 },
-    { level: 9, name: 'LEGEND', xpReq: 40000, reward: 10000 },
-    { level: 10, name: 'NEON ROYALE', xpReq: 55000, reward: 20000 }
-];
-
-// --- UI Navigation Manager ---
-const UI = {
-    showScreen(screenId) {
-        AudioEngine.playClick();
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById('hud-overlay').classList.add('hidden');
-        
-        if (screenId === 'garage-screen') {
-            Garage.init();
-        } else if (screenId === 'missions-screen') {
-            Missions.render();
-        } else if (screenId === 'leaderboard-screen') {
-            Leaderboard.render();
-        }
-
-        const target = document.getElementById(screenId);
-        if (target) target.classList.add('active');
-        this.updateHomeStats();
-    },
-
-    updateHomeStats() {
-        document.getElementById('home-coins').innerText = Storage.data.coins;
-        document.getElementById('home-level').innerText = Storage.data.level;
-        document.getElementById('home-highscore').innerText = Storage.data.highScore;
-    },
-
-    showLevelUp(lvlObj) {
-        AudioEngine.playLevelUp();
-        document.getElementById('popup-levelname').innerText = lvlObj.name;
-        document.getElementById('popup-reward').innerText = lvlObj.reward;
-        document.getElementById('levelup-popup').classList.remove('hidden');
-    }
-};
-
-// --- Garage Controller ---
-const Garage = {
-    selectedCarId: null,
-
-    init() {
-        this.selectedCarId = Storage.data.selectedCar;
-        this.renderList();
-        this.updateShowcase();
-    },
-
-    renderList() {
-        const container = document.getElementById('car-list-container');
-        container.innerHTML = '';
-        CARS.forEach(car => {
-            const unlocked = Storage.data.unlockedCars.includes(car.id);
-            const isSelected = car.id === this.selectedCarId;
-            const div = document.createElement('div');
-            div.className = `car-card ${isSelected ? 'selected' : ''}`;
-            div.innerHTML = `
-                <div class="car-card-info">
-                    <h4>${car.emoji} ${car.name}</h4>
-                    <p>${unlocked ? (isSelected ? 'EQUIPPED' : 'UNLOCKED') : `PRICE: ${car.price} 💰`}</p>
-                </div>
-            `;
-            div.onclick = () => {
-                AudioEngine.playClick();
-                this.selectedCarId = car.id;
-                this.renderList();
-                this.updateShowcase();
-            };
-            container.appendChild(div);
-        });
-        document.getElementById('garage-coins').innerText = Storage.data.coins;
-    },
-
-    updateShowcase() {
-        const car = CARS.find(c => c.id === this.selectedCarId) || CARS[0];
-        const unlocked = Storage.data.unlockedCars.includes(car.id);
-        
-        document.getElementById('car-preview-art').innerText = car.emoji;
-        document.getElementById('current-car-name').innerText = car.name;
-        document.getElementById('stat-speed').style.width = car.speed + '%';
-        document.getElementById('stat-accel').style.width = car.accel + '%';
-        document.getElementById('stat-handling').style.width = car.handling + '%';
-
-        const btn = document.getElementById('car-action-btn');
-        if (unlocked) {
-            btn.innerText = car.id === Storage.data.selectedCar ? 'EQUIPPED' : 'SELECT';
-            btn.className = 'neon-btn primary-btn';
-        } else {
-            btn.innerText = `UNLOCK (${car.price} 💰)`;
-            btn.className = 'neon-btn';
-        }
-    },
-
-    handleCarAction() {
-        AudioEngine.playClick();
-        const car = CARS.find(c => c.id === this.selectedCarId);
-        const unlocked = Storage.data.unlockedCars.includes(car.id);
-
-        if (unlocked) {
-            Storage.data.selectedCar = car.id;
-            Storage.save();
-            this.renderList();
-        } else {
-            if (Storage.data.coins >= car.price) {
-                Storage.data.coins -= car.price;
-                Storage.data.unlockedCars.push(car.id);
-                Storage.data.selectedCar = car.id;
-                Storage.save();
-                this.renderList();
-                this.updateShowcase();
-            } else {
-                alert('Not enough coins to unlock this supercar!');
-            }
-        }
-    }
-};
-
-// --- Missions System ---
-const Missions = {
-    render() {
-        const container = document.getElementById('missions-container');
-        container.innerHTML = '';
-        Object.keys(Storage.data.missions).forEach(id => {
-            const m = Storage.data.missions[id];
-            const div = document.createElement('div');
-            div.className = `mission-item ${m.completed ? 'completed' : ''}`;
-            div.innerHTML = `
-                <div>
-                    <h4>${m.text}</h4>
-                    <p>Reward: ${m.reward} 💰 — Progress: ${Math.min(m.progress, m.target)} / ${m.target}</p>
-                </div>
-                <div>${m.completed ? '✅ COMPLETED' : '⏳ ACTIVE'}</div>
-            `;
-            container.appendChild(div);
-        });
-    },
-
-    checkMissionProgress(type, val) {
-        let updated = false;
-        Object.keys(Storage.data.missions).forEach(id => {
-            let m = Storage.data.missions[id];
-            if (m.completed) return;
-
-            if (type === 'dist' && id == '1') {
-                m.progress = parseFloat(val.toFixed(2));
-                if (m.progress >= m.target) this.completeMission(id);
-                updated = true;
-            } else if (type === 'speed' && (id == '2' || id == '5')) {
-                if (val >= m.target) {
-                    m.progress = val;
-                    this.completeMission(id);
-                    updated = true;
-                }
-            } else if (type === 'coin' && id == '3') {
-                m.progress = val;
-                if (m.progress >= m.target) this.completeMission(id);
-                updated = true;
-            } else if (type === 'nocrash' && id == '4') {
-                m.progress = 1;
-                this.completeMission(id);
-                updated = true;
-            } else if (type === 'dist' && id == '6') {
-                m.progress = parseFloat(val.toFixed(2));
-                if (m.progress >= m.target) this.completeMission(id);
-                updated = true;
-            }
-        });
-        if (updated) Storage.save();
-    },
-
-    completeMission(id) {
-        let m = Storage.data.missions[id];
-        if (m.completed) return;
-        m.completed = true;
-        Storage.data.coins += m.reward;
-        AudioEngine.playMissionComplete();
-    }
-};
-
-// --- Leaderboard System ---
-const Leaderboard = {
-    render() {
-        const container = document.getElementById('leaderboard-container');
-        container.innerHTML = `
-            <div class="leaderboard-row" style="font-weight:bold; color:var(--neon-cyan)">
-                <span>RANK & CALLSIGN</span>
-                <span>SCORE / SPEED</span>
-            </div>
-            <div class="leaderboard-row">
-                <span>1. 👑 ${Storage.data.playerName} (YOU)</span>
-                <span>${Storage.data.highScore} PTS (${Storage.data.highSpeed} KM/H)</span>
-            </div>
-            <div class="leaderboard-row">
-                <span>2. ⚡ VORTEX_X</span>
-                <span>14,500 PTS (310 KM/H)</span>
-            </div>
-            <div class="leaderboard-row">
-                <span>3. 🏎️ CYBER_VIP</span>
-                <span>12,200 PTS (295 KM/H)</span>
-            </div>
-            <div class="leaderboard-row">
-                <span>4. 🌙 NIGHTHAWK</span>
-                <span>9,800 PTS (280 KM/H)</span>
-            </div>
-        `;
-    }
-};
-
-// --- Main Game Engine ---
-const Game = {
-    canvas: null,
-    ctx: null,
-    isRunning: false,
-    
-    // Physics & State
-    carX: 0,
-    carY: 0,
-    speed: 0,
-    maxSpeed: 240,
-    accelRate: 0.5,
-    handlingVal: 3.5,
-    distance: 0,
-    score: 0,
-    coinsEarned: 0,
-    coinsCollectedThisRun: 0,
-    topSpeedRun: 0,
-    crashed: false,
-    
-    // Controls State
-    keys: { left: false, right: false, accel: false, brake: false },
-
-    // World Elements
-    roadWidth: 600,
-    traffic: [],
-    coinsList: [],
-    particles: [],
-    scenery: [],
-    roadOffset: 0,
-
-    init() {
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-        this.setupControls();
-    },
-
-    resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-    },
-
-    setupControls() {
-        window.addEventListener('keydown', e => {
-            if (!this.isRunning) return;
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') this.keys.accel = true;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'Space') this.keys.brake = true;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.keys.left = true;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') this.keys.right = true;
-        });
-
-        window.addEventListener('keyup', e => {
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') this.keys.accel = false;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.code === 'Space') this.keys.brake = false;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.keys.left = false;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') this.keys.right = false;
-        });
-
-        // Touch Controls
-        const bindTouch = (id, keyName) => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.addEventListener('touchstart', (e) => { e.preventDefault(); this.keys[keyName] = true; });
-            el.addEventListener('touchend', (e) => { e.preventDefault(); this.keys[keyName] = false; });
-            el.addEventListener('mousedown', () => { this.keys[keyName] = true; });
-            el.addEventListener('mouseup', () => { this.keys[keyName] = false; });
-        };
-
-        bindTouch('btn-left', 'left');
-        bindTouch('btn-right', 'right');
-        bindTouch('btn-accel', 'accel');
-        bindTouch('btn-brake', 'brake');
-    },
-
-    startRun() {
-        AudioEngine.init();
-        AudioEngine.playClick();
-        
-        const selectedCarObj = CARS.find(c => c.id === Storage.data.selectedCar) || CARS[0];
-        this.maxSpeed = selectedCarObj.speed * 3.2;
-        this.accelRate = selectedCarObj.accel * 0.008;
-        this.handlingVal = selectedCarObj.handling * 0.045;
-
-        // Reset state
-        this.speed = 0;
-        this.distance = 0;
-        this.score = 0;
-        this.coinsEarned = 0;
-        this.coinsCollectedThisRun = 0;
-        this.topSpeedRun = 0;
-        this.crashed = false;
-        this.carX = 0;
-        this.traffic = [];
-        this.coinsList = [];
-        this.particles = [];
-        this.roadOffset = 0;
-
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById('hud-overlay').classList.remove('hidden');
-
-        this.isRunning = true;
-        requestAnimationFrame(() => this.loop());
-    },
-
-    loop() {
-        if (!this.isRunning) return;
-
-        this.update();
-        this.render();
-
-        requestAnimationFrame(() => this.loop());
-    },
-
-    update() {
-        // Handle Acceleration & Braking
-        if (this.keys.accel) {
-            this.speed += this.accelRate;
-            if (this.speed > this.maxSpeed) this.speed = this.maxSpeed;
-        } else {
-            this.speed -= 0.35; // Natural friction deceleration
-            if (this.speed < 0) this.speed = 0;
-        }
-
-        if (this.keys.brake) {
-            this.speed -= 1.8;
-            if (this.speed < 0) this.speed = 0;
-        }
-
-        // Steering
-        const steerFactor = this.handlingVal * (this.speed / this.maxSpeed || 0.2);
-        if (this.keys.left) this.carX -= steerFactor * 4.5;
-        if (this.keys.right) this.carX += steerFactor * 4.5;
-
-        const maxRoadLimit = this.roadWidth / 2 - 40;
-        if (this.carX < -maxRoadLimit) this.carX = -maxRoadLimit;
-        if (this.carX > maxRoadLimit) this.carX = maxRoadLimit;
-
-        // Distance & Stats
-        const kmDelta = (this.speed / 3600) * 0.06;
-        this.distance += kmDelta;
-        this.score += Math.floor(this.speed * 0.02);
-
-        if (this.speed > this.topSpeedRun) this.topSpeedRun = Math.floor(this.speed);
-
-        // Mission Hooks
-        Missions.checkMissionProgress('dist', this.distance);
-        Missions.checkMissionProgress('speed', this.topSpeedRun);
-
-        // Traffic Spawning
-        if (Math.random() < 0.025 + (this.speed / 2000)) {
-            this.traffic.push({
-                x: (Math.random() * 0.8 - 0.4) * this.roadWidth,
-                y: -100,
-                speed: 2 + Math.random() * 3,
-                color: ['#ff007f', '#bd00ff', '#00f3ff', '#ffd700'][Math.floor(Math.random() * 4)]
-            });
-        }
-
-        // Coin Spawning
-        if (Math.random() < 0.03) {
-            this.coinsList.push({
-                x: (Math.random() * 0.8 - 0.4) * this.roadWidth,
-                y: -100
-            });
-        }
-
-        // Update Traffic
-        const worldSpeed = this.speed * 0.12;
-        this.roadOffset += worldSpeed;
-
-        for (let i = this.traffic.length - 1; i >= 0; i--) {
-            let t = this.traffic[i];
-            t.y += worldSpeed - t.speed;
-
-            // Collision check
-            if (t.y > this.canvas.height - 220 && t.y < this.canvas.height - 120) {
-                if (Math.abs(this.carX - t.x) < 45) {
-                    this.gameOver();
-                    return;
-                }
-            }
-
-            if (t.y > this.canvas.height + 100) this.traffic.splice(i, 1);
-        }
-
-        // Update Coins
-        for (let i = this.coinsList.length - 1; i >= 0; i--) {
-            let c = this.coinsList[i];
-            c.y += worldSpeed;
-
-            // Collection check
-            if (c.y > this.canvas.height - 220 && c.y < this.canvas.height - 120) {
-                if (Math.abs(this.carX - c.x) < 50) {
-                    AudioEngine.playCoin();
-                    this.coinsEarned += 10;
-                    this.coinsCollectedThisRun++;
-                    Missions.checkMissionProgress('coin', this.coinsCollectedThisRun);
-                    this.coinsList.splice(i, 1);
-                    continue;
-                }
-            }
-
-            if (c.y > this.canvas.height + 100) this.coinsList.splice(i, 1);
-        }
-
-        // Update HUD DOM
-        document.getElementById('hud-speed').innerText = Math.floor(this.speed);
-        document.getElementById('hud-coins').innerText = Storage.data.coins + this.coinsEarned;
-        document.getElementById('hud-score').innerText = this.score;
-        document.getElementById('hud-dist').innerText = this.distance.toFixed(2);
-        document.getElementById('hud-level').innerText = Storage.data.level;
-        document.getElementById('hud-levelname').innerText = LEVELS[Storage.data.level - 1]?.name || 'ROOKIE';
-
-        // Animate Speedometer Needle
-        const needleAngle = -135 + (this.speed / this.maxSpeed) * 270;
-        const needle = document.getElementById('speedometer-needle');
-        if (needle) needle.style.transform = `rotate(${needleAngle}deg)`;
-    },
-
-    render() {
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        const ctx = this.ctx;
-
-        // Background Sky & Neon Grid
-        ctx.fillStyle = '#05050f';
-        ctx.fillRect(0, 0, w, h);
-
-        // Draw Stars/City Glow in Horizon
-        ctx.fillStyle = '#00f3ff';
-        ctx.fillRect(0, h * 0.35 - 2, w, 4);
-
-        // Draw Road Perspective
-        const centerX = w / 2;
-        const roadW = this.roadWidth;
-        const horizonY = h * 0.35;
-
-        ctx.fillStyle = '#111122';
-        ctx.beginPath();
-        ctx.moveTo(centerX - roadW * 0.15, horizonY);
-        ctx.lineTo(centerX + roadW * 0.15, horizonY);
-        ctx.lineTo(centerX + roadW, h);
-        ctx.lineTo(centerX - roadW, h);
-        ctx.fill();
-
-        // Road Center Neon Lines
-        ctx.strokeStyle = '#00f3ff';
-        ctx.lineWidth = 4;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#00f3ff';
-
-        ctx.beginPath();
-        ctx.moveTo(centerX - roadW * 0.15, horizonY);
-        ctx.lineTo(centerX - roadW, h);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(centerX + roadW * 0.15, horizonY);
-        ctx.lineTo(centerX + roadW, h);
-        ctx.stroke();
-
-        // Moving Center Dashes
-        ctx.strokeStyle = '#ff007f';
-        ctx.lineWidth = 6;
-        ctx.shadowColor = '#ff007f';
-        ctx.setLineDash([30, 40]);
-        ctx.lineDashOffset = -this.roadOffset * 2;
-        ctx.beginPath();
-        ctx.moveTo(centerX, horizonY);
-        ctx.lineTo(centerX, h);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.shadowBlur = 0;
-
-        // Render Coins
-        this.coinsList.forEach(c => {
-            const screenX = centerX + c.x * (c.y / h);
-            const scale = Math.max(0.3, c.y / h);
-            ctx.fillStyle = '#ffd700';
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = '#ffd700';
-            ctx.beginPath();
-            ctx.arc(screenX, c.y, 14 * scale, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        });
-
-        // Render Traffic
-        this.traffic.forEach(t => {
-            const screenX = centerX + t.x;
-            const screenY = t.y;
-            ctx.fillStyle = t.color;
-            ctx.shadowBlur = 12;
-            ctx.shadowColor = t.color;
-            ctx.roundRect(screenX - 35, screenY - 50, 70, 100, 10);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        });
-
-        // Render Player Supercar
-        const playerScreenX = centerX + this.carX;
-        const playerScreenY = h - 160;
-
-        ctx.fillStyle = '#00f3ff';
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = '#00f3ff';
-        ctx.roundRect(playerScreenX - 38, playerScreenY - 60, 76, 120, 14);
-        ctx.fill();
-
-        // Cockpit Window Glass
-        ctx.fillStyle = '#05050f';
-        ctx.fillRect(playerScreenX - 26, playerScreenY - 30, 52, 45);
-        ctx.shadowBlur = 0;
-    },
-
-    gameOver() {
-        this.isRunning = false;
-        AudioEngine.playCrash();
-        Missions.checkMissionProgress('nocrash', 0); // Reset or mark no-crash condition if needed
-
-        // Save earnings & highscore
-        Storage.data.coins += this.coinsEarned;
-        if (this.score > Storage.data.highScore) Storage.data.highScore = this.score;
-        if (this.topSpeedRun > Storage.data.highSpeed) Storage.data.highSpeed = this.topSpeedRun;
-        if (this.distance > Storage.data.maxDist) Storage.data.maxDist = this.distance;
-
-        // Check Level Progression
-        let currentLevelObj = LEVELS[Storage.data.level - 1];
-        let nextLevelObj = LEVELS[Storage.data.level];
-        if (nextLevelObj && Storage.data.highScore >= nextLevelObj.xpReq) {
-            Storage.data.level++;
-            Storage.data.coins += nextLevelObj.reward;
-            UI.showLevelUp(nextLevelObj);
-        }
-
-        Storage.save();
-
-        // Populate Game Over Screen
-        document.getElementById('go-score').innerText = this.score;
-        document.getElementById('go-dist').innerText = this.distance.toFixed(2);
-        document.getElementById('go-speed').innerText = this.topSpeedRun;
-        document.getElementById('go-coins').innerText = this.coinsEarned;
-
-        document.getElementById('hud-overlay').classList.add('hidden');
-        document.getElementById('gameover-screen').classList.add('active');
-    },
-
-    dismissLevelUp() {
-        AudioEngine.playClick();
-        document.getElementById('levelup-popup').classList.add('hidden');
-    }
-};
-
-// Initialize Application on DOM Ready
-window.addEventListener('DOMContentLoaded', () => {
-    Storage.load();
-    Game.init();
-    UI.updateHomeStats();
-});
+
+:root {
+    --bg-deep: #030308;
+    --panel-bg: rgba(12, 12, 25, 0.8);
+    --neon-cyan: #00f3ff;
+    --neon-violet: #bd00ff;
+    --neon-pink: #ff007f;
+    --neon-gold: #ffd700;
+    --text-main: #f0f6fc;
+    --border-glow: rgba(0, 243, 255, 0.3);
+    --font-orbitron: 'Orbitron', sans-serif;
+    --font-rajdhani: 'Rajdhani', sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-deep);
+    font-family: var(--font-rajdhani);
+    color: var(--text-main);
+}
+
+#app-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#vaultCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/* Glassmorphism Panels */
+.glass-panel {
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.12), inset 0 0 15px rgba(0, 243, 255, 0.04);
+    border-radius: 14px;
+}
+
+/* Screens Layout */
+.screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: radial-gradient(circle at center, rgba(12,12,30,0.75) 0%, rgba(3,3,8,0.95) 100%);
+}
+
+.screen.active {
+    display: flex;
+}
+
+/* Home Screen */
+.hero-glow {
+    position: absolute;
+    width: 380px;
+    height: 380px;
+    background: radial-gradient(circle, rgba(0,243,255,0.18) 0%, rgba(189,0,255,0) 70%);
+    z-index: -1;
+    animation: pulseGlow 4s infinite alternate;
+}
+
+@keyframes pulseGlow {
+    0% { transform: scale(0.85); opacity: 0.5; }
+    100% { transform: scale(1.2); opacity: 1; }
+}
+
+.logo-container {
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.vault-icon {
+    font-size: 3rem;
+    animation: bounceVault 2s infinite ease-in-out;
+    display: inline-block;
+}
+
+@keyframes bounceVault {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.game-title {
+    font-family: var(--font-orbitron);
+    font-size: clamp(2.3rem, 5vw, 4rem);
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: #fff;
+    text-shadow: 0 0 10px var(--neon-cyan), 0 0 30px var(--neon-cyan);
+}
+
+.game-subtitle {
+    font-family: var(--font-rajdhani);
+    font-size: clamp(1rem, 2vw, 1.3rem);
+    letter-spacing: 6px;
+    color: var(--neon-violet);
+    text-shadow: 0 0 10px var(--neon-violet);
+    margin-top: 4px;
+}
+
+.menu-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 300px;
+    padding: 22px;
+}
+
+/* Neon Buttons */
+.neon-btn {
+    font-family: var(--font-orbitron);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    background: transparent;
+    color: var(--text-main);
+    border: 2px solid var(--neon-cyan);
+    padding: 11px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 10px rgba(0,243,255,0.2);
+    text-align: center;
+}
+
+.neon-btn:hover, .neon-btn:active {
+    background: var(--neon-cyan);
+    color: #030308;
+    box-shadow: 0 0 25px var(--neon-cyan), 0 0 50px var(--neon-cyan);
+    transform: translateY(-2px);
+}
+
+.primary-btn {
+    border-color: var(--neon-pink);
+    color: #fff;
+    background: linear-gradient(135deg, rgba(255,0,127,0.3), rgba(189,0,255,0.3));
+    box-shadow: 0 0 15px rgba(255,0,127,0.4);
+}
+
+.primary-btn:hover, .primary-btn:active {
+    background: var(--neon-pink);
+    border-color: var(--neon-pink);
+    box-shadow: 0 0 30px var(--neon-pink), 0 0 60px var(--neon-pink);
+    color: #fff;
+}
+
+.player-hud-summary {
+    display: flex;
+    justify-content: space-around;
+    width: 300px;
+    padding: 10px;
+    margin-top: 18px;
+    font-family: var(--font-orbitron);
+    font-size: 0.9rem;
+}
+
+/* Common Header/Footer */
+.screen-header {
+    width: 100%;
+    max-width: 800px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    font-family: var(--font-orbitron);
+    color: var(--neon-cyan);
+    border-bottom: 1px solid var(--border-glow);
+    padding-bottom: 10px;
+}
+
+.screen-footer {
+    margin-top: 15px;
+    width: 100%;
+    max-width: 800px;
+    display: flex;
+    justify-content: center;
+}
+
+.icon-btn {
+    background: transparent;
+    border: 1px solid var(--neon-pink);
+    color: var(--neon-pink);
+    font-size: 1.1rem;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.icon-btn:hover {
+    background: var(--neon-pink);
+    color: #fff;
+    box-shadow: 0 0 15px var(--neon-pink);
+}
+
+/* Level Map Screen */
+.progress-bar-container {
+    width: 100%;
+    max-width: 800px;
+    padding: 12px 20px;
+    margin-bottom: 12px;
+    font-family: var(--font-orbitron);
+    font-size: 0.85rem;
+}
+
+.prog-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-glow);
+}
+
+.prog-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet));
+    width: 0%;
+    transition: width 0.4s ease;
+}
+
+.level-grid {
+    width: 100%;
+    max-width: 800px;
+    height: 55vh;
+    overflow-y: auto;
+    padding: 15px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 10px;
+}
+
+.level-node {
+    background: rgba(20,20,35,0.7);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    height: 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+    font-family: var(--font-orbitron);
+    font-size: 0.85krem;
+}
+
+.level-node.unlocked {
+    border-color: var(--neon-cyan);
+    color: #fff;
+    box-shadow: 0 0 10px rgba(0,243,255,0.2);
+}
+
+.level-node.unlocked:hover {
+    background: rgba(0,243,255,0.15);
+    transform: translateY(-2px);
+}
+
+.level-node.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: #555;
+}
+
+.level-node .node-stars {
+    font-size: 0.65rem;
+    color: var(--neon-gold);
+    margin-top: 3px;
+}
+
+/* Puzzle Gameplay */
+.puzzle-top-bar {
+    width: 100%;
+    max-width: 750px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.hud-badge {
+    padding: 8px 14px;
+    font-family: var(--font-orbitron);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.streak-badge {
+    color: var(--neon-gold);
+}
+
+.puzzle-main-container {
+    width: 100%;
+    max-width: 750px;
+    padding: 25px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    min-height: 380px;
+    justify-content: center;
+    text-align: center;
+}
+
+.puzzle-header-info h3 {
+    font-family: var(--font-orbitron);
+    font-size: 1.5rem;
+    color: var(--neon-cyan);
+    margin-bottom: 6px;
+}
+
+.puzzle-header-info p {
+    font-size: 1.05rem;
+    color: #ccc;
+}
+
+.puzzle-interactive-area {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Puzzle Elements */
+.options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 450px;
+}
+
+.puzzle-option-btn {
+    font-family: var(--font-orbitron);
+    font-size: 1.1rem;
+    background: rgba(15,15,30,0.8);
+    border: 1px solid var(--neon-cyan);
+    color: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.puzzle-option-btn:hover {
+    background: var(--neon-cyan);
+    color: #030308;
+    box-shadow: 0 0 15px var(--neon-cyan);
+}
+
+.text-answer-input {
+    background: rgba(0,0,0,0.6);
+    border: 2px solid var(--neon-cyan);
+    color: #fff;
+    font-family: var(--font-orbitron);
+    font-size: 1.2rem;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-align: center;
+    width: 220px;
+}
+
+.hint-box {
+    width: 100%;
+    max-width: 500px;
+    padding: 10px 15px;
+    font-size: 0.9rem;
+    border-color: var(--neon-gold);
+    color: var(--neon-gold);
+}
+
+.hint-box.hidden {
+    display: none;
+}
+
+/* Modals */
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.82);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-box {
+    padding: 30px;
+    text-align: center;
+    width: 90%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.modal-box h2 {
+    font-family: var(--font-orbitron);
+    font-size: 1.8rem;
+    color: var(--neon-gold);
+    text-shadow: 0 0 15px var(--neon-gold);
+}
+
+.stars-display-row {
+    font-size: 2rem;
+    letter-spacing: 5px;
+}
+
+.glitch-text {
+    color: #ff3333 !important;
+    text-shadow: 0 0 15px #ff3333 !important;
+}
+
+/* Achievements & Stats */
+.achievements-list, .stats-panel, .settings-panel {
+    width: 100%;
+    max-width: 750px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.achievement-row, .stat-row, .setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    background: rgba(15,15,30,0.7);
+    border: 1px solid var(--border-glow);
+    border-radius: 8px;
+    font-family: var(--font-orbitron);
+    font-size: 0.9rem;
+}
+
+.achievement-row.unlocked {
+    border-color: var(--neon-gold);
+    box-shadow: 0 0 10px rgba(255,215,0,0.2);
+}
+
+.danger-zone {
+    color: #ff3333;
+    border-color: rgba(255,51,51,0.3);
+}
+
+.danger-btn {
+    border-color: #ff3333;
+    color: #ff3333;
+}
+
+.danger-btn:hover {
+    background: #ff3333;
+    color: #fff;
+    box-shadow: 0 0 20px #ff3333;
+}
