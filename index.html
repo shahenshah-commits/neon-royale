@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEON ROYALE — Luxury Supercar Night Drive</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="home-screen" class="screen active">
+            <div class="hero-glow"></div>
+            <div class="logo-container">
+                <span class="crown">👑</span>
+                <h1 class="game-title">NEON ROYALE</h1>
+                <h2 class="game-subtitle">LUXURY SUPERCAR NIGHT DRIVE</h2>
+            </div>
+
+            <div class="menu-grid glass-panel">
+                <button class="neon-btn primary-btn" onclick="Game.startRun()">▶ PLAY</button>
+                <button class="neon-btn" onclick="UI.showScreen('missions-screen')">🏁 MISSIONS</button>
+                <button class="neon-btn" onclick="UI.showScreen('garage-screen')">🚗 GARAGE</button>
+                <button class="neon-btn" onclick="UI.showScreen('leaderboard-screen')">🏆 LEADERBOARD</button>
+                <button class="neon-btn" onclick="UI.showScreen('settings-screen')">⚙ SETTINGS</button>
+            </div>
+
+            <div class="player-hud-summary glass-panel">
+                <div class="stat-item">💰 <span id="home-coins">0</span></div>
+                <div class="stat-item">⭐ LVL <span id="home-level">1</span></div>
+                <div class="stat-item">🏆 BEST <span id="home-highscore">0</span></div>
+            </div>
+        </div>
+
+        <div id="garage-screen" class="screen">
+            <div class="screen-header">
+                <h2>🚗 ELITE GARAGE</h2>
+                <button class="icon-btn" onclick="UI.showScreen('home-screen')">✕</button>
+            </div>
+            
+            <div class="garage-container">
+                <div class="car-showcase glass-panel">
+                    <div class="car-preview-display" id="car-preview-art">🏎️</div>
+                    <h3 id="current-car-name">ROYALE X</h3>
+                    <div class="car-stats-bars">
+                        <div class="stat-bar"><span>SPEED</span><div class="bar"><div id="stat-speed" class="fill"></div></div></div>
+                        <div class="stat-bar"><span>ACCEL</span><div class="bar"><div id="stat-accel" class="fill"></div></div></div>
+                        <div class="stat-bar"><span>HANDLING</span><div class="bar"><div id="stat-handling" class="fill"></div></div></div>
+                    </div>
+                </div>
+
+                <div class="car-selector-list" id="car-list-container">
+                    </div>
+            </div>
+
+            <div class="garage-footer glass-panel">
+                <div class="wallet-display">💰 <span id="garage-coins">0</span></div>
+                <button id="car-action-btn" class="neon-btn primary-btn" onclick="Garage.handleCarAction()">SELECT</button>
+                <button class="neon-btn" onclick="UI.showScreen('home-screen')">BACK</button>
+            </div>
+        </div>
+
+        <div id="missions-screen" class="screen">
+            <div class="screen-header">
+                <h2>🏁 CONTRACT MISSIONS</h2>
+                <button class="icon-btn" onclick="UI.showScreen('home-screen')">✕</button>
+            </div>
+            <div class="missions-list glass-panel" id="missions-container">
+                </div>
+            <div class="screen-footer">
+                <button class="neon-btn" onclick="UI.showScreen('home-screen')">BACK</button>
+            </div>
+        </div>
+
+        <div id="leaderboard-screen" class="screen">
+            <div class="screen-header">
+                <h2>🏆 HALL OF LEGENDS</h2>
+                <button class="icon-btn" onclick="UI.showScreen('home-screen')">✕</button>
+            </div>
+            <div class="profile-input-box glass-panel">
+                <label>DRIVER CALLSIGN:</label>
+                <input type="text" id="player-name-input" maxlength="12" placeholder="ENTER NAME" onchange="Storage.savePlayerName(this.value)">
+            </div>
+            <div class="leaderboard-table glass-panel" id="leaderboard-container">
+                </div>
+            <div class="screen-footer">
+                <button class="neon-btn" onclick="UI.showScreen('home-screen')">BACK</button>
+            </div>
+        </div>
+
+        <div id="settings-screen" class="screen">
+            <div class="screen-header">
+                <h2>⚙ SYSTEM PREFERENCES</h2>
+                <button class="icon-btn" onclick="UI.showScreen('home-screen')">✕</button>
+            </div>
+            <div class="settings-panel glass-panel">
+                <div class="setting-row">
+                    <span>🔊 SOUND EFFECTS</span>
+                    <button id="sfx-toggle-btn" class="neon-btn toggle-btn" onclick="AudioEngine.toggleSFX()">ON</button>
+                </div>
+                <div class="setting-row">
+                    <span>🎵 SYNTHWAVE MUSIC</span>
+                    <button id="music-toggle-btn" class="neon-btn toggle-btn" onclick="AudioEngine.toggleMusic()">ON</button>
+                </div>
+                <div class="setting-row danger-zone">
+                    <span>⚠️ RESET SYSTEM MEMORY</span>
+                    <button class="neon-btn danger-btn" onclick="Storage.resetData()">FACTORY RESET</button>
+                </div>
+            </div>
+            <div class="screen-footer">
+                <button class="neon-btn" onclick="UI.showScreen('home-screen')">BACK</button>
+            </div>
+        </div>
+
+        <div id="hud-overlay" class="game-hud hidden">
+            <div class="hud-top-bar">
+                <div class="glass-panel hud-box">SPEED: <span id="hud-speed">0</span> <small>KM/H</small></div>
+                <div class="glass-panel hud-box">💰 <span id="hud-coins">0</span></div>
+                <div class="glass-panel hud-box">SCORE: <span id="hud-score">0</span></div>
+                <div class="glass-panel hud-box">DIST: <span id="hud-dist">0.0</span> KM</div>
+            </div>
+
+            <div class="hud-sub-bar">
+                <div class="glass-panel hud-small">LVL: <span id="hud-level">1</span> — <span id="hud-levelname">ROOKIE</span></div>
+                <div class="glass-panel hud-small mission-hud">MISSION: <span id="hud-mission-text">Drive 1 KM</span></div>
+            </div>
+
+            <div class="speedometer-container">
+                <div class="speedometer-gauge">
+                    <div id="speedometer-needle" class="gauge-needle"></div>
+                    <div class="gauge-center"></div>
+                </div>
+            </div>
+
+            <div class="mobile-controls" id="mobile-controls">
+                <div class="steering-controls">
+                    <button class="touch-btn" id="btn-left">⬅️</button>
+                    <button class="touch-btn" id="btn-right">➡️</button>
+                </div>
+                <div class="action-controls">
+                    <button class="touch-btn brake-btn" id="btn-brake">🛑</button>
+                    <button class="touch-btn accel-btn" id="btn-accel">🚀</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="levelup-popup" class="modal-overlay hidden">
+            <div class="modal-box glass-panel">
+                <h2>⚡ LEVEL UP! ⚡</h2>
+                <p>NEW RANK ACHIEVED:</p>
+                <h3 id="popup-levelname" class="glow-text">STREET RACER</h3>
+                <p class="reward-text">BONUS REWARD: <span id="popup-reward">500</span> 💰</p>
+                <button class="neon-btn primary-btn" onclick="Game.dismissLevelUp()">CONTINUE</button>
+            </div>
+        </div>
+
+        <div id="gameover-screen" class="screen">
+            <div class="gameover-box glass-panel">
+                <h1 class="glitch-text">WRECKED</h1>
+                <p class="subtitle-go">SYSTEM CRITICAL FAILURE</p>
+                
+                <div class="results-grid">
+                    <div class="result-item">FINAL SCORE <span id="go-score">0</span></div>
+                    <div class="result-item">DISTANCE <span id="go-dist">0.0</span> KM</div>
+                    <div class="result-item">TOP SPEED <span id="go-speed">0</span> KM/H</div>
+                    <div class="result-item">COINS EARNED <span id="go-coins">0</span></div>
+                </div>
+
+                <div class="gameover-buttons">
+                    <button class="neon-btn primary-btn" onclick="Game.startRun()">🔄 PLAY AGAIN</button>
+                    <button class="neon-btn" onclick="UI.showScreen('home-screen')">🏠 HOME</button>
+                    <button class="neon-btn" onclick="UI.showScreen('garage-screen'); Garage.init();">🚗 GARAGE</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
